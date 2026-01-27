@@ -1,0 +1,74 @@
+name: Jumia Deal Scraper
+
+on:
+  schedule:
+    - cron: "5 * * * *" # every 5 minutes
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Jumia Category URL (must include {page})"
+        required: false
+        default: "https://www.jumia.com.eg/mens-jackets-coats/defacto/?sort=lowest-price&page={page}#catalog-listing"
+      pages_to_scrape:
+        description: "Number of pages to scrape"
+        required: false
+        default: "6"
+      price_threshold:
+        description: "Maximum price to alert (EGP)"
+        required: false
+        default: "550"
+      discount_threshold:
+        description: "Minimum discount percentage (%)"
+        required: false
+        default: "70"
+      min_price_drop:
+        description: "Minimum price drop to re-alert (EGP)"
+        required: false
+        default: "30"
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install curl_cffi beautifulsoup4
+
+      - name: Run scraper
+        env:
+          BASE_URL: ${{ github.event.inputs.base_url || 'https://www.jumia.com.eg/mens-jackets-coats/defacto/?sort=lowest-price&page={page}#catalog-listing' }}
+          PAGES_TO_SCRAPE: ${{ github.event.inputs.pages_to_scrape || '6' }}
+          PRICE_THRESHOLD: ${{ github.event.inputs.price_threshold || '550' }}
+          DISCOUNT_THRESHOLD: ${{ github.event.inputs.discount_threshold || '70' }}
+          MIN_PRICE_DROP: ${{ github.event.inputs.min_price_drop || '30' }}
+          MAX_WORKERS: 2
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PROXY_LIST: ${{ secrets.PROXY_LIST }}
+        run: |
+          python jumia.py
+
+      - name: Commit history if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git status --porcelain | grep sent_deals.json; then
+            git add sent_deals.json
+            git commit -m "Update sent deals history [skip ci]"
+            git push
+          else
+            echo "No history changes to commit"
+          fi
